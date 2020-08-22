@@ -8,8 +8,6 @@ services:
       - ./go:/go/src/webapp
     env_file:
       - ".env"
-    environment:
-      - "PAYMENT_API"
     links:
       - payment
     ports:
