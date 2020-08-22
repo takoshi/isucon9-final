@@ -19,6 +19,7 @@ services:
     command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       - "TZ=Asia/Tokyo"
+      - "BIND-ADDRESS: 0.0.0.0"
     env_file:
       - ".env"
     volumes:
@@ -42,21 +43,6 @@ services:
     working_dir: /go/src/payment
     env_file:
       - ".env"
-
-  # development only
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    environment:
-      - PMA_ARBITRARY=1
-      - PMA_HOST=mysql
-      - PMA_USER=root
-      - PMA_PASSWORD=password
-    links:
-      - mysql
-    ports:
-       - 8082:80
-    volumes:
-       - /sessions
 
 volumes:
   mysql:
