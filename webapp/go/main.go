@@ -1034,25 +1034,22 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx := dbx.MustBegin()
 	// 止まらない駅の予約を取ろうとしていないかチェックする
 	// 列車データを取得
 	tmas := Train{}
 	query := "SELECT * FROM train_master WHERE date=? AND train_class=? AND train_name=? ORDER BY departure_at"
-	err = tx.Get(
+	err = dbx.Get(
 		&tmas, query,
 		date.Format("2006/01/02"),
 		req.TrainClass,
 		req.TrainName,
 	)
 	if err == sql.ErrNoRows {
-		tx.Rollback()
 		errorResponse(w, http.StatusNotFound, "列車データがみつかりません")
 		log.Println(err.Error())
 		return
 	}
 	if err != nil {
-		tx.Rollback()
 		errorResponse(w, http.StatusInternalServerError, "列車データの取得に失敗しました")
 		log.Println(err.Error())
 		return
@@ -1060,33 +1057,17 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 列車自体の駅IDを求める
 	var departureStation, arrivalStation Station
-	query = "SELECT * FROM station_master WHERE name=?"
-	// Departure
-	err = tx.Get(&departureStation, query, tmas.StartStation)
-	if err == sql.ErrNoRows {
-		tx.Rollback()
+	departureStation, departureStationExist := getStation(tmas.StartStation)
+	if !departureStationExist {
 		errorResponse(w, http.StatusNotFound, "リクエストされた列車の始発駅データがみつかりません")
-		log.Println(err.Error())
-		return
-	}
-	if err != nil {
-		tx.Rollback()
-		errorResponse(w, http.StatusInternalServerError, "リクエストされた列車の始発駅データの取得に失敗しました")
 		log.Println(err.Error())
 		return
 	}
 
 	// Arrive
-	err = tx.Get(&arrivalStation, query, tmas.LastStation)
-	if err == sql.ErrNoRows {
-		tx.Rollback()
+	arrivalStation, arrivalStationExist := getStation(tmas.StartStation)
+	if !arrivalStationExist {
 		errorResponse(w, http.StatusNotFound, "リクエストされた列車の終着駅データがみつかりません")
-		log.Println(err.Error())
-		return
-	}
-	if err != nil {
-		tx.Rollback()
-		errorResponse(w, http.StatusInternalServerError, "リクエストされた列車の終着駅データの取得に失敗しました")
 		log.Println(err.Error())
 		return
 	}
@@ -1096,30 +1077,26 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 	query = "SELECT * FROM station_master WHERE name=?"
 
 	// From
-	err = tx.Get(&fromStation, query, req.Departure)
+	err = dbx.Get(&fromStation, query, req.Departure)
 	if err == sql.ErrNoRows {
-		tx.Rollback()
 		errorResponse(w, http.StatusNotFound, fmt.Sprintf("乗車駅データがみつかりません %s", req.Departure))
 		log.Println(err.Error())
 		return
 	}
 	if err != nil {
-		tx.Rollback()
 		errorResponse(w, http.StatusInternalServerError, "乗車駅データの取得に失敗しました")
 		log.Println(err.Error())
 		return
 	}
 
 	// To
-	err = tx.Get(&toStation, query, req.Arrival)
+	err = dbx.Get(&toStation, query, req.Arrival)
 	if err == sql.ErrNoRows {
-		tx.Rollback()
 		errorResponse(w, http.StatusNotFound, fmt.Sprintf("降車駅データがみつかりません %s", req.Arrival))
 		log.Println(err.Error())
 		return
 	}
 	if err != nil {
-		tx.Rollback()
 		errorResponse(w, http.StatusInternalServerError, "降車駅データの取得に失敗しました")
 		log.Println(err.Error())
 		return
@@ -1128,24 +1105,20 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 	switch req.TrainClass {
 	case "最速":
 		if !fromStation.IsStopExpress || !toStation.IsStopExpress {
-			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, "最速の止まらない駅です")
 			return
 		}
 	case "中間":
 		if !fromStation.IsStopSemiExpress || !toStation.IsStopSemiExpress {
-			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, "中間の止まらない駅です")
 			return
 		}
 	case "遅いやつ":
 		if !fromStation.IsStopLocal || !toStation.IsStopLocal {
-			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, "遅いやつの止まらない駅です")
 			return
 		}
 	default:
-		tx.Rollback()
 		errorResponse(w, http.StatusBadRequest, "リクエストされた列車クラスが不明です")
 		log.Println(err.Error())
 		return
@@ -1154,27 +1127,25 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 	// 運行していない区間を予約していないかチェックする
 	if tmas.IsNobori {
 		if fromStation.ID > departureStation.ID || toStation.ID > departureStation.ID {
-			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, "リクエストされた区間に列車が運行していない区間が含まれています")
 			return
 		}
 		if arrivalStation.ID >= fromStation.ID || arrivalStation.ID > toStation.ID {
-			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, "リクエストされた区間に列車が運行していない区間が含まれています")
 			return
 		}
 	} else {
 		if fromStation.ID < departureStation.ID || toStation.ID < departureStation.ID {
-			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, "リクエストされた区間に列車が運行していない区間が含まれています")
 			return
 		}
 		if arrivalStation.ID <= fromStation.ID || arrivalStation.ID < toStation.ID {
-			tx.Rollback()
 			errorResponse(w, http.StatusBadRequest, "リクエストされた区間に列車が運行していない区間が含まれています")
 			return
 		}
 	}
+
+	tx := dbx.MustBegin()
 
 	/*
 		あいまい座席検索
