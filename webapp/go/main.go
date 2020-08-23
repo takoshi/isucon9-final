@@ -333,7 +333,7 @@ func getDistanceFare(origToDestDistance float64) (int, error) {
 	lastFare := 0
 	for _, distanceFare := range distanceFareList {
 
-		fmt.Println(origToDestDistance, distanceFare.Distance, distanceFare.Fare)
+		//fmt.Println(origToDestDistance, distanceFare.Distance, distanceFare.Fare)
 		if float64(lastDistance) < origToDestDistance && origToDestDistance < float64(distanceFare.Distance) {
 			break
 		}
@@ -373,12 +373,12 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 		return 0, err
 	}
 
-	fmt.Println("distance", math.Abs(toStation.Distance-fromStation.Distance))
+	//fmt.Println("distance", math.Abs(toStation.Distance-fromStation.Distance))
 	distFare, err := getDistanceFare(math.Abs(toStation.Distance - fromStation.Distance))
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println("distFare", distFare)
+	//fmt.Println("distFare", distFare)
 
 	// 期間・車両・座席クラス倍率
 	fareList := []Fare{}
@@ -396,12 +396,12 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 	for _, fare := range fareList {
 		if !date.Before(fare.StartDate) {
-			fmt.Println(fare.StartDate, fare.FareMultiplier)
+			//fmt.Println(fare.StartDate, fare.FareMultiplier)
 			selectedFare = fare
 		}
 	}
 
-	fmt.Println("%%%%%%%%%%%%%%%%%%%")
+	//fmt.Println("%%%%%%%%%%%%%%%%%%%")
 
 	return int(float64(distFare) * selectedFare.FareMultiplier), nil
 }
@@ -503,6 +503,13 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 	var inQuery string
 	var inArgs []interface{}
 
+	stations := []Station{}
+	err = dbx.Select(&stations, query)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	if trainClass == "" {
 		query := "SELECT * FROM train_master WHERE date=? AND train_class IN (?) AND is_nobori=?"
 		inQuery, inArgs, err = sqlx.In(query, date.Format("2006/01/02"), usableTrainClassList, isNobori)
@@ -522,15 +529,8 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stations := []Station{}
-	err = dbx.Select(&stations, query)
-	if err != nil {
-		errorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	fmt.Println("From", fromStation)
-	fmt.Println("To", toStation)
+	//fmt.Println("From", fromStation)
+	//fmt.Println("To", toStation)
 
 	trainSearchResponseList := []TrainSearchResponse{}
 
@@ -703,7 +703,7 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp, err := json.Marshal(trainSearchResponseList)
-	fmt.Println(trainSearchResponseList)
+
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
@@ -829,8 +829,6 @@ WHERE
 			return
 		}
 
-		fmt.Println(seatReservationList)
-
 		for _, seatReservation := range seatReservationList {
 			reservation := Reservation{}
 			query = "SELECT * FROM reservations WHERE reservation_id=?"
@@ -875,7 +873,7 @@ WHERE
 			}
 		}
 
-		fmt.Println(s.IsOccupied)
+		//fmt.Println(s.IsOccupied)
 		seatInformationList = append(seatInformationList, s)
 	}
 
@@ -1474,7 +1472,7 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sumFare := (req.Adult * fare) + (req.Child*fare)/2
-	fmt.Println("SUMFARE")
+	//fmt.Println("SUMFARE")
 
 	// userID取得。ログインしてないと怒られる。
 	user, errCode, errMsg := getUser(r)
@@ -1970,7 +1968,7 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 	reservation := Reservation{}
 	query := "SELECT * FROM reservations WHERE reservation_id=? AND user_id=?"
 	err = tx.Get(&reservation, query, itemID, user.ID)
-	fmt.Println("CANCEL", reservation, itemID, user.ID)
+	//fmt.Println("CANCEL", reservation, itemID, user.ID)
 	if err == sql.ErrNoRows {
 		tx.Rollback()
 		errorResponse(w, http.StatusBadRequest, "reservations naiyo")
@@ -2043,7 +2041,7 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 			log.Println(err.Error())
 			return
 		}
-		fmt.Println(output)
+		//fmt.Println(output)
 	default:
 		// pass(requesting状態のものはpayment_id無いので叩かない)
 	}
