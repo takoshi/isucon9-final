@@ -250,15 +250,16 @@ var (
 /**
  * 駅情報を取得する
  */
-func getStation(stationName string) (station Station) {
+func getStation(stationName string) (station Station, exist bool) {
 	if len(stationMap) == 0 {
 		var stationList []Station
-		dbx.Get(&stationList, "SELECT * FROM station_master")
+		dbx.Select(&stationList, "SELECT * FROM station_master")
 		for _, station := range stationList {
 			stationMap[station.Name] = station
 		}
 	}
-	return stationMap[stationName]
+	station, exist = stationMap[stationName]
+	return station, exist
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -768,29 +769,18 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var fromStation, toStation Station
-	query = "SELECT * FROM station_master WHERE name=?"
-
 	// From
-	err = dbx.Get(&fromStation, query, fromName)
-	if err == sql.ErrNoRows {
+	fromStation, fromStationExist := getStation(fromName)
+	if !fromStationExist {
 		log.Print("fromStation: no rows")
-		errorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err != nil {
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// To
-	err = dbx.Get(&toStation, query, toName)
-	if err == sql.ErrNoRows {
+	toStation, toStationExist := getStation(toName)
+	if !toStationExist {
 		log.Print("toStation: no rows")
-		errorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err != nil {
-		log.Print(err)
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -856,19 +846,9 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			var departureStation, arrivalStation Station
-			//query = "SELECT * FROM station_master WHERE name=?"
 
-			departureStation = getStation(reservation.Departure)
-			arrivalStation = getStation(reservation.Arrival)
-
-			//err = dbx.Get(&departureStation, query, reservation.Departure)
-			//if err != nil {
-			//	panic(err)
-			//}
-			//err = dbx.Get(&arrivalStation, query, reservation.Arrival)
-			//if err != nil {
-			//	panic(err)
-			//}
+			departureStation, _ = getStation(reservation.Departure)
+			arrivalStation, _ = getStation(reservation.Arrival)
 
 			if train.IsNobori {
 				// 上り
