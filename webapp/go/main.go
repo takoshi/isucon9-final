@@ -2124,6 +2124,7 @@ func main() {
 	app, _ = newrelic.NewApplication(
 		newrelic.ConfigAppName("isucon9-final"),
 		newrelic.ConfigLicense(os.Getenv("NEWRELIC_TOKEN")),
+		newrelic.ConfigDistributedTracerEnabled(true),
 	)
 	// MySQL関連のお膳立て
 	var err error
