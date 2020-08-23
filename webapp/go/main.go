@@ -703,6 +703,7 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	resp, err := json.Marshal(trainSearchResponseList)
+	fmt.Println(trainSearchResponseList)
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
