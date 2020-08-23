@@ -97,6 +97,8 @@ type SeatReservation struct {
 	SeatColumn    string `json:"seat_column" db:"seat_column"`
 }
 
+
+
 // 未整理
 
 type CarInformation struct {
@@ -878,9 +880,18 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 //		seatInformationList = append(seatInformationList, s)
 //	}
 
+	type SeatReservation struct {
+		ReservationId int    `json:"reservation_id,omitempty" db:"reservation_id"`
+		CarNumber     int    `json:"car_number,omitempty" db:"car_number"`
+		SeatRow       int    `json:"seat_row" db:"seat_row"`
+		SeatColumn    string `json:"seat_column" db:"seat_column"`
+		Departure	  string `json:"departure" db:"departure"`
+		Arrival		  string `json:"arrival" db:"arrival"`
+	}
+
 	seatReservationList := []SeatReservation{}
 	query = `
-			SELECT s.*
+			SELECT s.*, r.departure, r.arrival
 				FROM seat_reservations s, reservations r
 			WHERE
 				r.date=? AND r.train_class=? AND r.train_name=? AND car_number=?
@@ -912,17 +923,10 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 		s := SeatInformation{seat.SeatRow, seat.SeatColumn, seat.SeatClass, seat.IsSmokingSeat, false}
 
 		for _, seatReservation := range seatReservationMap[seat.SeatColumn][seat.SeatRow] {
-			reservation := Reservation{}
-			query = "SELECT * FROM reservations WHERE reservation_id=?"
-			err = dbx.Get(&reservation, query, seatReservation.ReservationId)
-			if err != nil {
-				panic(err)
-			}
-
 			var departureStation, arrivalStation Station
 
-			departureStation, _ = getStation(reservation.Departure)
-			arrivalStation, _ = getStation(reservation.Arrival)
+			departureStation, _ = getStation(seatReservation.Departure)
+			arrivalStation, _ = getStation(seatReservation.Arrival)
 
 			if train.IsNobori {
 				// 上り
