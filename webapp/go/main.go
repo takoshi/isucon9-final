@@ -810,34 +810,108 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var seatInformationList []SeatInformation
 
+//	for _, seat := range seatList {
+//
+//		s := SeatInformation{seat.SeatRow, seat.SeatColumn, seat.SeatClass, seat.IsSmokingSeat, false}
+//
+//		seatReservationList := []SeatReservation{}
+//
+//		query := `
+//			SELECT s.*
+//				FROM seat_reservations s, reservations r
+//			WHERE
+//				r.date=? AND r.train_class=? AND r.train_name=? AND car_number=? AND seat_row=? AND seat_column=?
+//`
+//
+//		err = dbx.Select(
+//			&seatReservationList, query,
+//			date.Format("2006/01/02"),
+//			seat.TrainClass,
+//			trainName,
+//			seat.CarNumber,
+//			seat.SeatRow,
+//			seat.SeatColumn,
+//		)
+//		if err != nil {
+//			errorResponse(w, http.StatusBadRequest, err.Error())
+//			return
+//		}
+//
+//		for _, seatReservation := range seatReservationList {
+//			reservation := Reservation{}
+//			query = "SELECT * FROM reservations WHERE reservation_id=?"
+//			err = dbx.Get(&reservation, query, seatReservation.ReservationId)
+//			if err != nil {
+//				panic(err)
+//			}
+//
+//			var departureStation, arrivalStation Station
+//
+//			departureStation, _ = getStation(reservation.Departure)
+//			arrivalStation, _ = getStation(reservation.Arrival)
+//
+//			if train.IsNobori {
+//				// 上り
+//				if toStation.ID < arrivalStation.ID && fromStation.ID <= arrivalStation.ID {
+//					// pass
+//				} else if toStation.ID >= departureStation.ID && fromStation.ID > departureStation.ID {
+//					// pass
+//				} else {
+//					s.IsOccupied = true
+//				}
+//
+//			} else {
+//				// 下り
+//
+//				if fromStation.ID < departureStation.ID && toStation.ID <= departureStation.ID {
+//					// pass
+//				} else if fromStation.ID >= arrivalStation.ID && toStation.ID > arrivalStation.ID {
+//					// pass
+//				} else {
+//					s.IsOccupied = true
+//				}
+//
+//			}
+//		}
+//
+//		//fmt.Println(s.IsOccupied)
+//		seatInformationList = append(seatInformationList, s)
+//	}
+
+	seatReservationList := []SeatReservation{}
+	query = `
+			SELECT s.*
+				FROM seat_reservations s, reservations r
+			WHERE
+				r.date=? AND r.train_class=? AND r.train_name=? AND car_number=?
+	`
+
+	err = dbx.Select(
+		&seatReservationList, query,
+		date.Format("2006/01/02"),
+		trainClass,
+		trainName,
+		carNumber,
+	)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	seatReservationMap := make(map[string]map[int][]SeatReservation)
+	for _, seatReservation := range seatReservationList {
+		if _, exist := seatReservationMap[seatReservation.SeatColumn]; !exist {
+			seatReservationMap[seatReservation.SeatColumn] = make(map[int][]SeatReservation)
+		}
+		seatReservationMap[seatReservation.SeatColumn][seatReservation.SeatRow] =
+			append(seatReservationMap[seatReservation.SeatColumn][seatReservation.SeatRow], seatReservation)
+	}
+
 	for _, seat := range seatList {
 
 		s := SeatInformation{seat.SeatRow, seat.SeatColumn, seat.SeatClass, seat.IsSmokingSeat, false}
 
-		seatReservationList := []SeatReservation{}
-
-		query := `
-			SELECT s.*
-				FROM seat_reservations s, reservations r
-			WHERE
-				r.date=? AND r.train_class=? AND r.train_name=? AND car_number=? AND seat_row=? AND seat_column=?
-`
-
-		err = dbx.Select(
-			&seatReservationList, query,
-			date.Format("2006/01/02"),
-			seat.TrainClass,
-			trainName,
-			seat.CarNumber,
-			seat.SeatRow,
-			seat.SeatColumn,
-		)
-		if err != nil {
-			errorResponse(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		for _, seatReservation := range seatReservationList {
+		for _, seatReservation := range seatReservationMap[seat.SeatColumn][seat.SeatRow] {
 			reservation := Reservation{}
 			query = "SELECT * FROM reservations WHERE reservation_id=?"
 			err = dbx.Get(&reservation, query, seatReservation.ReservationId)
