@@ -244,6 +244,23 @@ var (
 	store sessions.Store = sessions.NewCookieStore([]byte("hogefugapiyo"))
 )
 
+var (
+	stationMap = make(map[string]Station)
+)
+/**
+ * 駅情報を取得する
+ */
+func getStation(stationName string) (station Station) {
+	if len(stationMap) == 0 {
+		var stationList []Station
+		dbx.Get(&stationList, "SELECT * FROM station_master")
+		for _, station := range stationList {
+			stationMap[station.Name] = station
+		}
+	}
+	return stationMap[stationName]
+}
+
 func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hello, World")
 }
@@ -810,10 +827,10 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 		seatReservationList := []SeatReservation{}
 
 		query := `
-SELECT s.*
-FROM seat_reservations s, reservations r
-WHERE
-	r.date=? AND r.train_class=? AND r.train_name=? AND car_number=? AND seat_row=? AND seat_column=?
+			SELECT s.*
+				FROM seat_reservations s, reservations r
+			WHERE
+				r.date=? AND r.train_class=? AND r.train_name=? AND car_number=? AND seat_row=? AND seat_column=?
 `
 
 		err = dbx.Select(
@@ -839,16 +856,19 @@ WHERE
 			}
 
 			var departureStation, arrivalStation Station
-			query = "SELECT * FROM station_master WHERE name=?"
+			//query = "SELECT * FROM station_master WHERE name=?"
 
-			err = dbx.Get(&departureStation, query, reservation.Departure)
-			if err != nil {
-				panic(err)
-			}
-			err = dbx.Get(&arrivalStation, query, reservation.Arrival)
-			if err != nil {
-				panic(err)
-			}
+			departureStation = getStation(reservation.Departure)
+			arrivalStation = getStation(reservation.Arrival)
+
+			//err = dbx.Get(&departureStation, query, reservation.Departure)
+			//if err != nil {
+			//	panic(err)
+			//}
+			//err = dbx.Get(&arrivalStation, query, reservation.Arrival)
+			//if err != nil {
+			//	panic(err)
+			//}
 
 			if train.IsNobori {
 				// 上り
