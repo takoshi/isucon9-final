@@ -18,6 +18,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
+	"github.com/newrelic/go-agent/v3/newrelic"
 	goji "goji.io"
 	"goji.io/pat"
 	"golang.org/x/crypto/pbkdf2"
@@ -2107,7 +2108,23 @@ func dummyHandler(w http.ResponseWriter, r *http.Request) {
 	messageResponse(w, "ok")
 }
 
+var app *newrelic.Application
+
+// Middleware to create/end NewRelic transaction
+func nrt(inner http.Handler) http.Handler {
+	mw := func(w http.ResponseWriter, r *http.Request) {
+		txn := app.StartTransaction(r.URL.Path)
+		inner.ServeHTTP(w, r)
+		txn.End()
+	}
+	return http.HandlerFunc(mw)
+}
+
 func main() {
+	app, _ = newrelic.NewApplication(
+		newrelic.ConfigAppName("isucon9-final"),
+		newrelic.ConfigLicense(os.Getenv("NEWRELIC_TOKEN")),
+	)
 	// MySQL関連のお膳立て
 	var err error
 
@@ -2154,6 +2171,7 @@ func main() {
 	// HTTP
 
 	mux := goji.NewMux()
+	mux.Use(nrt)
 
 	mux.HandleFunc(pat.Post("/initialize"), initializeHandler)
 	mux.HandleFunc(pat.Get("/api/settings"), settingsHandler)
