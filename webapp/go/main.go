@@ -2175,6 +2175,9 @@ func main() {
 	mux.HandleFunc(pat.Get("/api/user/reservations/:item_id"), userReservationResponseHandler)
 	mux.HandleFunc(pat.Post("/api/user/reservations/:item_id/cancel"), userReservationCancelHandler)
 
+	// 静的ファイル
+	mux.Handle(pat.Get("/*"), http.FileServer(http.Dir("../frontend/dist")))
+
 	fmt.Println(banner)
 	err = http.ListenAndServe(":8000", mux)
 

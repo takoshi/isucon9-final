@@ -8,7 +8,5 @@ services:
       - ./go:/go/src/webapp
     env_file:
       - ".env"
-    links:
-      - payment
     ports:
       - "127.0.0.1:8000:8000"
