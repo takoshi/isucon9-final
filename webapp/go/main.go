@@ -240,7 +240,7 @@ const (
 )
 
 var (
-	store sessions.Store = sessions.NewCookieStore([]byte(secureRandomStr(20)))
+	store sessions.Store = sessions.NewCookieStore([]byte("hogefugapiyo"))
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
