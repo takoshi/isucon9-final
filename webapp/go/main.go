@@ -249,6 +249,23 @@ var (
 var (
 	stationMap = make(map[string]Station)
 )
+
+var normalStations, noboriStations []Station
+func getStations(descFlag bool) ([]Station) {
+	if len(normalStations) == 0 {
+		query := "SELECT * FROM station_master ORDER BY distance"
+		dbx.Select(&normalStations, query)
+		query += " DESC"
+		dbx.Select(&noboriStations, query)
+	}
+
+	if descFlag {
+		return noboriStations
+	} else {
+		return normalStations
+	}
+}
+
 /**
  * 駅情報を取得する
  */
@@ -481,30 +498,20 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 	child, _ := strconv.Atoi(r.URL.Query().Get("child"))
 
 	var fromStation, toStation Station
-	query := "SELECT * FROM station_master WHERE name=?"
 
 	// From
-	err = dbx.Get(&fromStation, query, fromName)
-	if err == sql.ErrNoRows {
+	fromStation, fromStationExist := getStation(fromName)
+	if !fromStationExist {
 		log.Print("fromStation: no rows")
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 
 	// To
-	err = dbx.Get(&toStation, query, toName)
-	if err == sql.ErrNoRows {
+	toStation, toStationExist := getStation(toName)
+	if !toStationExist {
 		log.Print("toStation: no rows")
 		errorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err != nil {
-		log.Print(err)
-		errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -513,23 +520,12 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		isNobori = true
 	}
 
-	query = "SELECT * FROM station_master ORDER BY distance"
-	if isNobori {
-		// 上りだったら駅リストを逆にする
-		query += " DESC"
-	}
-
 	usableTrainClassList := getUsableTrainClassList(fromStation, toStation)
 
 	var inQuery string
 	var inArgs []interface{}
 
-	stations := []Station{}
-	err = dbx.Select(&stations, query)
-	if err != nil {
-		errorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
+	stations := getStations(isNobori)
 
 	if trainClass == "" {
 		query := "SELECT * FROM train_master WHERE date=? AND train_class IN (?) AND is_nobori=? ORDER BY departure_at"
