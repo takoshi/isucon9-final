@@ -97,6 +97,15 @@ type SeatReservation struct {
 	SeatColumn    string `json:"seat_column" db:"seat_column"`
 }
 
+type TrainTimetableMaster struct {
+	Date 		*time.Time	`json:"date" db:"date"`
+	TrainClass	string 		`json:"train_class" db:"train_class"`
+	TrainName	string		`json:"train_name" db:"train_name"`
+	Station		string		`json:"station" db:"station"`
+	Departure   string     	`json:"departure" db:"departure"`
+	Arrival     string     	`json:"arrival" db:"arrival"`
+}
+
 
 
 // 未整理
@@ -573,6 +582,33 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 
 	trainSearchResponseList := []TrainSearchResponse{}
 
+	var trainTimetableFromMasterList, trainTimetableToMasterList []TrainTimetableMaster
+	trainTimetableFromMasterMap := make(map[string]map[string]TrainTimetableMaster)
+	trainTimetableToMasterMap := make(map[string]map[string]TrainTimetableMaster)
+	err = dbx.Select(&trainTimetableFromMasterList, "SELECT * FROM train_timetable_master WHERE date=? AND station=?", date.Format("2006/01/02"), fromStation.Name)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	err = dbx.Select(&trainTimetableToMasterList, "SELECT * FROM train_timetable_master WHERE date=? AND station=?", date.Format("2006/01/02"), toStation.Name)
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	for _, trainTimetable := range trainTimetableFromMasterList {
+		if len(trainTimetableFromMasterMap[trainTimetable.TrainClass]) == 0 {
+			trainTimetableFromMasterMap[trainTimetable.TrainClass] = make(map[string]TrainTimetableMaster)
+		}
+		trainTimetableFromMasterMap[trainTimetable.TrainClass][trainTimetable.TrainName] = trainTimetable
+	}
+	for _, trainTimetable := range trainTimetableToMasterList {
+		if len(trainTimetableToMasterMap[trainTimetable.TrainClass]) == 0 {
+			trainTimetableToMasterMap[trainTimetable.TrainClass] = make(map[string]TrainTimetableMaster)
+		}
+		trainTimetableToMasterMap[trainTimetable.TrainClass][trainTimetable.TrainName] = trainTimetable
+	}
+
 	for _, train := range trainList {
 		isSeekedToFirstStation := false
 		isContainsOriginStation := false
@@ -619,11 +655,12 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 			// 所要時間
 			var departure, arrival string
 
-			err = dbx.Get(&departure, "SELECT departure FROM train_timetable_master WHERE date=? AND train_class=? AND train_name=? AND station=?", date.Format("2006/01/02"), train.TrainClass, train.TrainName, fromStation.Name)
-			if err != nil {
+			departureMaster, exist := trainTimetableFromMasterMap[train.TrainClass][train.TrainName]
+			if !exist {
 				errorResponse(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+			departure = departureMaster.Departure
 
 			departureDate, err := time.Parse("2006/01/02 15:04:05 -07:00 MST", fmt.Sprintf("%s %s +09:00 JST", date.Format("2006/01/02"), departure))
 			if err != nil {
@@ -636,11 +673,12 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			err = dbx.Get(&arrival, "SELECT arrival FROM train_timetable_master WHERE date=? AND train_class=? AND train_name=? AND station=?", date.Format("2006/01/02"), train.TrainClass, train.TrainName, toStation.Name)
-			if err != nil {
+			arrivalTimetable, exist := trainTimetableToMasterMap[train.TrainClass][train.TrainName]
+			if !exist {
 				errorResponse(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+			arrival = arrivalTimetable.Arrival
 
 			premium_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "premium", false)
 			if err != nil {
