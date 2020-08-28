@@ -247,10 +247,11 @@ var (
 )
 
 var (
+	normalStations, noboriStations []Station
 	stationMap = make(map[string]Station)
+	stationMapByID = make(map[int]Station)
 )
 
-var normalStations, noboriStations []Station
 func getStations(descFlag bool) ([]Station) {
 	if len(normalStations) == 0 {
 		query := "SELECT * FROM station_master ORDER BY distance"
@@ -278,6 +279,19 @@ func getStation(stationName string) (station Station, exist bool) {
 		}
 	}
 	station, exist = stationMap[stationName]
+	return station, exist
+}
+
+
+func getStationByID(id int) (station Station, exist bool) {
+	if len(stationMapByID) == 0 {
+		var stationList []Station
+		dbx.Select(&stationList, "SELECT * FROM station_master")
+		for _, station := range stationList {
+			stationMapByID[station.ID] = station
+		}
+	}
+	station, exist = stationMapByID[id]
 	return station, exist
 }
 
@@ -357,14 +371,15 @@ func distanceFareHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(distanceFareList)
 }
 
+var distanceFareList []DistanceFare
 func getDistanceFare(origToDestDistance float64) (int, error) {
 
-	distanceFareList := []DistanceFare{}
-
-	query := "SELECT distance,fare FROM distance_fare_master ORDER BY distance"
-	err := dbx.Select(&distanceFareList, query)
-	if err != nil {
-		return 0, err
+	if len(distanceFareList) == 0 {
+		query := "SELECT distance,fare FROM distance_fare_master ORDER BY distance"
+		err := dbx.Select(&distanceFareList, query)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	lastDistance := 0.0
@@ -390,25 +405,16 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 	var err error
 	var fromStation, toStation Station
 
-	query := "SELECT * FROM station_master WHERE id=?"
-
 	// From
-	err = dbx.Get(&fromStation, query, depStation)
-	if err == sql.ErrNoRows {
-		return 0, err
-	}
-	if err != nil {
-		return 0, err
+	fromStation, fromStationExist := getStationByID(depStation)
+	if !fromStationExist {
+		return 0, sql.ErrNoRows
 	}
 
 	// To
-	err = dbx.Get(&toStation, query, destStation)
-	if err == sql.ErrNoRows {
-		return 0, err
-	}
-	if err != nil {
-		log.Print(err)
-		return 0, err
+	toStation, toStationExist := getStationByID(destStation)
+	if !toStationExist {
+		return 0, sql.ErrNoRows
 	}
 
 	//fmt.Println("distance", math.Abs(toStation.Distance-fromStation.Distance))
@@ -420,7 +426,7 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 
 	// 期間・車両・座席クラス倍率
 	fareList := []Fare{}
-	query = "SELECT * FROM fare_master WHERE train_class=? AND seat_class=? ORDER BY start_date"
+	query := "SELECT * FROM fare_master WHERE train_class=? AND seat_class=? ORDER BY start_date"
 	err = dbx.Select(&fareList, query, trainClass, seatClass)
 	if err != nil {
 		return 0, err
