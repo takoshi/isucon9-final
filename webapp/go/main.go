@@ -1061,11 +1061,13 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 	// Departure
 	err = dbx.Get(&departureStation, query, tmas.StartStation)
 	if err == sql.ErrNoRows {
+		dbx.Rollback()
 		errorResponse(w, http.StatusNotFound, "リクエストされた列車の始発駅データがみつかりません")
 		log.Println(err.Error())
 		return
 	}
 	if err != nil {
+		dbx.Rollback()
 		errorResponse(w, http.StatusInternalServerError, "リクエストされた列車の始発駅データの取得に失敗しました")
 		log.Println(err.Error())
 		return
