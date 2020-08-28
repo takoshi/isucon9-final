@@ -250,6 +250,7 @@ var (
 	normalStations, noboriStations []Station
 	stationMap = make(map[string]Station)
 	stationMapByID = make(map[int]Station)
+	fareListMap = make(map[string]map[string][]Fare)
 )
 
 func getStations(descFlag bool) ([]Station) {
@@ -282,7 +283,6 @@ func getStation(stationName string) (station Station, exist bool) {
 	return station, exist
 }
 
-
 func getStationByID(id int) (station Station, exist bool) {
 	if len(stationMapByID) == 0 {
 		var stationList []Station
@@ -293,6 +293,26 @@ func getStationByID(id int) (station Station, exist bool) {
 	}
 	station, exist = stationMapByID[id]
 	return station, exist
+}
+
+func getFareList(trainClass string, seatClass string) (fareList []Fare, exist bool) {
+	if len(fareListMap) == 0 {
+		dbFareList := []Fare{}
+		query := "SELECT * FROM fare_master ORDER BY start_date DESC"
+		dbx.Select(&dbFareList, query)
+		for _, fare := range dbFareList {
+			if len(fareListMap[fare.TrainClass]) == 0 {
+				fareListMap[fare.TrainClass] = make(map[string][]Fare)
+			}
+			fareListMap[fare.TrainClass][fare.SeatClass] = append(fareListMap[fare.TrainClass][fare.SeatClass], fare)
+		}
+	}
+
+	if len(fareListMap[trainClass]) != 0 && len(fareListMap[trainClass][seatClass]) != 0 {
+		return fareListMap[trainClass][seatClass], true
+	} else {
+		return nil, false
+	}
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -425,14 +445,9 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 	//fmt.Println("distFare", distFare)
 
 	// 期間・車両・座席クラス倍率
-	fareList := []Fare{}
-	query := "SELECT * FROM fare_master WHERE train_class=? AND seat_class=? ORDER BY start_date"
-	err = dbx.Select(&fareList, query, trainClass, seatClass)
-	if err != nil {
-		return 0, err
-	}
+	fareList, fareListExist := getFareList(trainClass, seatClass)
 
-	if len(fareList) == 0 {
+	if !fareListExist {
 		return 0, fmt.Errorf("fare_master does not exists")
 	}
 
@@ -442,6 +457,7 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 		if !date.Before(fare.StartDate) {
 			//fmt.Println(fare.StartDate, fare.FareMultiplier)
 			selectedFare = fare
+			break
 		}
 	}
 
