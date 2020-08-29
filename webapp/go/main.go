@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
-	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
