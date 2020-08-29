@@ -1474,6 +1474,8 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println(err.Error())
 		return
 	}
+
+	var dupReservationIdList []int
 	for _, reservation := range reservations {
 		if req.SeatClass == "non-reserved" {
 			break
@@ -1524,33 +1526,37 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if secdup {
+			dupReservationIdList = append(dupReservationIdList, reservation.ReservationId)
+		}
+	}
 
-			// 区間重複の場合は更に座席の重複をチェックする
-			SeatReservations := []SeatReservation{}
-			query := "SELECT * FROM seat_reservations WHERE reservation_id=? FOR UPDATE"
-			err = tx.Select(
-				&SeatReservations, query,
-				reservation.ReservationId,
-			)
-			if err != nil {
+	// 区間重複の場合は更に座席の重複をチェックする
+	SeatReservations := []SeatReservation{}
+	query = "SELECT * FROM seat_reservations WHERE reservation_id IN (?) FOR UPDATE"
+	query, params, _ := sqlx.In(query, dupReservationIdList)
+
+	err = tx.Select(
+		&SeatReservations, query,
+		params...
+	)
+	if err != nil {
+		tx.Rollback()
+		errorResponse(w, http.StatusInternalServerError, "座席予約情報の取得に失敗しました")
+		log.Println(err.Error())
+		return
+	}
+
+	for _, v := range SeatReservations {
+		for _, seat := range req.Seats {
+			if v.CarNumber == req.CarNumber && v.SeatRow == seat.Row && v.SeatColumn == seat.Column {
 				tx.Rollback()
-				errorResponse(w, http.StatusInternalServerError, "座席予約情報の取得に失敗しました")
-				log.Println(err.Error())
+				fmt.Println("Duplicated ")
+				errorResponse(w, http.StatusBadRequest, "リクエストに既に予約された席が含まれています")
 				return
-			}
-
-			for _, v := range SeatReservations {
-				for _, seat := range req.Seats {
-					if v.CarNumber == req.CarNumber && v.SeatRow == seat.Row && v.SeatColumn == seat.Column {
-						tx.Rollback()
-						fmt.Println("Duplicated ", reservation)
-						errorResponse(w, http.StatusBadRequest, "リクエストに既に予約された席が含まれています")
-						return
-					}
-				}
 			}
 		}
 	}
+
 	// 3段階の予約前チェック終わり
 
 	// 自由席は強制的にSeats情報をダミーにする（自由席なのに席指定予約は不可）
