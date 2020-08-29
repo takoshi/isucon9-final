@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -1275,36 +1276,53 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		var seatListMap = make(map[int][]Seat)
+		var seatList, err = getSeatMaster(req.TrainClass, req.SeatClass, req.IsSmokingSeat)
+		for _, seat := range seatList {
+			seatListMap[seat.CarNumber] = append(seatListMap[seat.CarNumber], seat)
+		}
+
 		req.Seats = []RequestSeat{} // 座席リクエスト情報は空に
-		for carnum := 1; carnum <= 16; carnum++ {
-			seatList := []Seat{}
-			query = "SELECT * FROM seat_master WHERE train_class=? AND car_number=? AND seat_class=? AND is_smoking_seat=? ORDER BY seat_row, seat_column"
-			err = dbx.Select(&seatList, query, req.TrainClass, carnum, req.SeatClass, req.IsSmokingSeat)
+		carNumList := []int{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}
+		func(data []int) {
+			n := len(data)
+			for i := n - 1; i >= 0; i-- {
+				j := rand.Intn(i + 1)
+				data[i], data[j] = data[j], data[i]
+			}
+		}(carNumList)
+		for _, carnum := range carNumList {
+			seatList, exist := seatListMap[carnum]
+			if !exist {
+				continue
+			}
+
+			var seatInformationList []SeatInformation
+
+			seatReservationList := []SeatReservation{}
+			query = "SELECT s.* FROM seat_reservations s, reservations r WHERE r.date=? AND r.train_class=? AND r.train_name=? FOR UPDATE"
+			err = dbx.Select(
+				&seatReservationList, query,
+				date.Format("2006/01/02"),
+				req.TrainClass,
+				req.TrainName,
+			)
 			if err != nil {
 				tx.Rollback()
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
 
-			var seatInformationList []SeatInformation
+			seatReservationMap := make(map[string][]SeatReservation)
+			for _, seatReservation := range seatReservationList {
+				key := fmt.Sprintf("%d_%d_%s", seatReservation.CarNumber, seatReservation.SeatRow, seatReservation.SeatColumn)
+				seatReservationMap[key] = append(seatReservationMap[key], seatReservation)
+			}
+
 			for _, seat := range seatList {
 				s := SeatInformation{seat.SeatRow, seat.SeatColumn, seat.SeatClass, seat.IsSmokingSeat, false}
-				seatReservationList := []SeatReservation{}
-				query = "SELECT s.* FROM seat_reservations s, reservations r WHERE r.date=? AND r.train_class=? AND r.train_name=? AND car_number=? AND seat_row=? AND seat_column=? FOR UPDATE"
-				err = dbx.Select(
-					&seatReservationList, query,
-					date.Format("2006/01/02"),
-					seat.TrainClass,
-					req.TrainName,
-					seat.CarNumber,
-					seat.SeatRow,
-					seat.SeatColumn,
-				)
-				if err != nil {
-					tx.Rollback()
-					errorResponse(w, http.StatusBadRequest, err.Error())
-					return
-				}
+				key := fmt.Sprintf("%d_%d_%s", seat.CarNumber, seat.SeatRow, seat.SeatColumn)
+				seatReservationList = seatReservationMap[key]
 
 				for _, seatReservation := range seatReservationList {
 					reservation := Reservation{}
