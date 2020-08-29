@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -1315,15 +1316,13 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 					}
 
 					var departureStation, arrivalStation Station
-					query = "SELECT * FROM station_master WHERE name=?"
-
-					err = dbx.Get(&departureStation, query, reservation.Departure)
-					if err != nil {
+					departureStation, exist := getStation(reservation.Departure)
+					if !exist {
 						tx.Rollback()
 						panic(err)
 					}
-					err = dbx.Get(&arrivalStation, query, reservation.Arrival)
-					if err != nil {
+					arrivalStation, exist = getStation(reservation.Arrival)
+					if !exist {
 						tx.Rollback()
 						panic(err)
 					}
@@ -1420,7 +1419,6 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		// 座席情報のValidate
 		seatList := Seat{}
 		for _, z := range req.Seats {
-			fmt.Println("XXXX", z)
 			query = "SELECT * FROM seat_master WHERE train_class=? AND car_number=? AND seat_column=? AND seat_row=? AND seat_class=?"
 			err = dbx.Get(
 				&seatList, query,
@@ -1456,30 +1454,30 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// train_masterから列車情報を取得(上り・下りが分かる)
+	tmas = Train{}
+	query = "SELECT * FROM train_master WHERE date=? AND train_class=? AND train_name=? ORDER BY departure_at"
+	err = tx.Get(
+		&tmas, query,
+		date.Format("2006/01/02"),
+		req.TrainClass,
+		req.TrainName,
+	)
+	if err == sql.ErrNoRows {
+		tx.Rollback()
+		errorResponse(w, http.StatusNotFound, "列車データがみつかりません")
+		log.Println(err.Error())
+		return
+	}
+	if err != nil {
+		tx.Rollback()
+		errorResponse(w, http.StatusInternalServerError, "列車データの取得に失敗しました")
+		log.Println(err.Error())
+		return
+	}
 	for _, reservation := range reservations {
 		if req.SeatClass == "non-reserved" {
 			break
-		}
-		// train_masterから列車情報を取得(上り・下りが分かる)
-		tmas = Train{}
-		query = "SELECT * FROM train_master WHERE date=? AND train_class=? AND train_name=? ORDER BY departure_at"
-		err = tx.Get(
-			&tmas, query,
-			date.Format("2006/01/02"),
-			req.TrainClass,
-			req.TrainName,
-		)
-		if err == sql.ErrNoRows {
-			tx.Rollback()
-			errorResponse(w, http.StatusNotFound, "列車データがみつかりません")
-			log.Println(err.Error())
-			return
-		}
-		if err != nil {
-			tx.Rollback()
-			errorResponse(w, http.StatusInternalServerError, "列車データの取得に失敗しました")
-			log.Println(err.Error())
-			return
 		}
 
 		// 予約情報の乗車区間の駅IDを求める
@@ -1487,31 +1485,19 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		query = "SELECT * FROM station_master WHERE name=?"
 
 		// From
-		err = tx.Get(&reservedfromStation, query, reservation.Departure)
-		if err == sql.ErrNoRows {
+		reservedfromStation, exist := getStation(reservation.Departure)
+		if !exist {
 			tx.Rollback()
 			errorResponse(w, http.StatusNotFound, "予約情報に記載された列車の乗車駅データがみつかりません")
 			log.Println(err.Error())
 			return
 		}
-		if err != nil {
-			tx.Rollback()
-			errorResponse(w, http.StatusInternalServerError, "予約情報に記載された列車の乗車駅データの取得に失敗しました")
-			log.Println(err.Error())
-			return
-		}
 
 		// To
-		err = tx.Get(&reservedtoStation, query, reservation.Arrival)
-		if err == sql.ErrNoRows {
+		reservedtoStation, exist = getStation(reservation.Arrival)
+		if !exist {
 			tx.Rollback()
 			errorResponse(w, http.StatusNotFound, "予約情報に記載された列車の降車駅データがみつかりません")
-			log.Println(err.Error())
-			return
-		}
-		if err != nil {
-			tx.Rollback()
-			errorResponse(w, http.StatusInternalServerError, "予約情報に記載された列車の降車駅データの取得に失敗しました")
 			log.Println(err.Error())
 			return
 		}
