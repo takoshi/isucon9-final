@@ -1324,13 +1324,24 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 				key := fmt.Sprintf("%d_%d_%s", seat.CarNumber, seat.SeatRow, seat.SeatColumn)
 				seatReservationList = seatReservationMap[key]
 
+				var reservationIDList []int
 				for _, seatReservation := range seatReservationList {
-					reservation := Reservation{}
-					query = "SELECT * FROM reservations WHERE reservation_id=? FOR UPDATE"
-					err = dbx.Get(&reservation, query, seatReservation.ReservationId)
-					if err != nil {
-						panic(err)
-					}
+					reservationIDList = append(reservationIDList, seatReservation.ReservationId)
+				}
+				if len(reservationIDList) == 0 {
+					seatInformationList = append(seatInformationList, s)
+					continue
+				}
+				query = "SELECT * FROM reservations WHERE reservation_id IN (?) FOR UPDATE"
+				query, param, _ := sqlx.In(query, reservationIDList)
+
+				var reservationList []Reservation
+				err := dbx.Select(&reservationList, query, param...)
+				if err != nil {
+					panic(err)
+				}
+
+				for _, reservation := range reservationList {
 
 					var departureStation, arrivalStation Station
 					departureStation, exist := getStation(reservation.Departure)
