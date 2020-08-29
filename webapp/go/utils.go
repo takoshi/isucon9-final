@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 )
@@ -48,16 +49,63 @@ func getUsableTrainClassList(fromStation Station, toStation Station) []string {
 	return ret
 }
 
-func (train Train) getAvailableSeats(fromStation Station, toStation Station, seatClass string, isSmokingSeat bool) ([]Seat, error) {
-	// 指定種別の空き座席を返す
+var seatMasterMap = make(map[string][]Seat)
+func getSeatMaster(trainClass, seatClass string, isSmokingSeat bool) ([]Seat, error) {
+	if len(seatMasterMap) == 0 {
+		query := "SELECT * FROM seat_master"
+		seatList := []Seat{}
+		err := dbx.Select(&seatList, query)
+		if err != nil {
+			return nil, err
+		}
+		for _, seat := range seatList {
+			key := fmt.Sprintf("%s_%s_%d", seat.TrainClass, seat.SeatClass, seat.IsSmokingSeat)
+			seatMasterMap[key] = append(seatMasterMap[key], seat)
+		}
+	}
 
+	key := fmt.Sprintf("%s_%s_%d", trainClass, seatClass, isSmokingSeat)
+	seatList, seatExist := seatMasterMap[key]
+	if !seatExist {
+		return nil, sql.ErrNoRows
+	}
+	return seatList, nil
+}
+
+func getSeatReservationList(fromStation Station, toStation Station, isNobori bool) ([]SeatReservation, error) {
+	query := `
+		SELECT sr.reservation_id, sr.car_number, sr.seat_row, sr.seat_column
+		FROM seat_reservations sr, reservations r, seat_master s, station_master std, station_master sta
+		WHERE
+			r.reservation_id=sr.reservation_id AND
+			s.train_class=r.train_class AND
+			s.car_number=sr.car_number AND
+			s.seat_column=sr.seat_column AND
+			s.seat_row=sr.seat_row AND
+			std.name=r.departure AND
+			sta.name=r.arrival
+	`
+
+	if isNobori {
+		query += "AND ((sta.id < ? AND ? <= std.id) OR (sta.id < ? AND ? <= std.id) OR (? < sta.id AND std.id < ?))"
+	} else {
+		query += "AND ((std.id <= ? AND ? < sta.id) OR (std.id <= ? AND ? < sta.id) OR (sta.id < ? AND ? < std.id))"
+	}
+
+	seatReservationList := []SeatReservation{}
+	err := dbx.Select(&seatReservationList, query, fromStation.ID, fromStation.ID, toStation.ID, toStation.ID, fromStation.ID, toStation.ID)
+	if err != nil {
+		return nil, err
+	}
+	return seatReservationList, nil
+}
+
+func (train Train) getAvailableSeats(seatReservationList []SeatReservation, seatClass string, isSmokingSeat bool) ([]Seat, error) {
+	// 指定種別の空き座席を返す
 	var err error
 
-	// 全ての座席を取得する
-	query := "SELECT * FROM seat_master WHERE train_class=? AND seat_class=? AND is_smoking_seat=?"
-
 	seatList := []Seat{}
-	err = dbx.Select(&seatList, query, train.TrainClass, seatClass, isSmokingSeat)
+	seatList, err = getSeatMaster(train.TrainClass, seatClass, isSmokingSeat)
 	if err != nil {
 		return nil, err
 	}
@@ -65,32 +113,6 @@ func (train Train) getAvailableSeats(fromStation Station, toStation Station, sea
 	availableSeatMap := map[string]Seat{}
 	for _, seat := range seatList {
 		availableSeatMap[fmt.Sprintf("%d_%d_%s", seat.CarNumber, seat.SeatRow, seat.SeatColumn)] = seat
-	}
-
-	// すでに取られている予約を取得する
-	query = `
-	SELECT sr.reservation_id, sr.car_number, sr.seat_row, sr.seat_column
-	FROM seat_reservations sr, reservations r, seat_master s, station_master std, station_master sta
-	WHERE
-		r.reservation_id=sr.reservation_id AND
-		s.train_class=r.train_class AND
-		s.car_number=sr.car_number AND
-		s.seat_column=sr.seat_column AND
-		s.seat_row=sr.seat_row AND
-		std.name=r.departure AND
-		sta.name=r.arrival
-	`
-
-	if train.IsNobori {
-		query += "AND ((sta.id < ? AND ? <= std.id) OR (sta.id < ? AND ? <= std.id) OR (? < sta.id AND std.id < ?))"
-	} else {
-		query += "AND ((std.id <= ? AND ? < sta.id) OR (std.id <= ? AND ? < sta.id) OR (sta.id < ? AND ? < std.id))"
-	}
-
-	seatReservationList := []SeatReservation{}
-	err = dbx.Select(&seatReservationList, query, fromStation.ID, fromStation.ID, toStation.ID, toStation.ID, fromStation.ID, toStation.ID)
-	if err != nil {
-		return nil, err
 	}
 
 	for _, seatReservation := range seatReservationList {

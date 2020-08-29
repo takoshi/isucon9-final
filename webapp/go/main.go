@@ -609,6 +609,12 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		trainTimetableToMasterMap[trainTimetable.TrainClass][trainTimetable.TrainName] = trainTimetable
 	}
 
+	seatReservationList, err := getSeatReservationList(fromStation, toStation, isNobori)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	for _, train := range trainList {
 		isSeekedToFirstStation := false
 		isContainsOriginStation := false
@@ -680,24 +686,24 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			arrival = arrivalTimetable.Arrival
 
-			premium_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "premium", false)
-			if err != nil {
+			premium_avail_seats, err := train.getAvailableSeats(seatReservationList, "premium", false)
+			if err != sql.ErrNoRows && err != nil {
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			premium_smoke_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "premium", true)
-			if err != nil {
+			premium_smoke_avail_seats, err := train.getAvailableSeats(seatReservationList, "premium", true)
+			if err != sql.ErrNoRows && err != nil {
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
 
-			reserved_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "reserved", false)
-			if err != nil {
+			reserved_avail_seats, err := train.getAvailableSeats(seatReservationList, "reserved", false)
+			if err != sql.ErrNoRows && err != nil {
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			reserved_smoke_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "reserved", true)
-			if err != nil {
+			reserved_smoke_avail_seats, err := train.getAvailableSeats(seatReservationList, "reserved", true)
+			if err != sql.ErrNoRows && err != nil {
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
