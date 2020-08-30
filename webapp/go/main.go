@@ -1302,7 +1302,7 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 
 			seatReservationList := []SeatReservation{}
 			query = "SELECT s.* FROM seat_reservations s, reservations r WHERE r.date=? AND r.train_class=? AND r.train_name=? FOR UPDATE"
-			err = dbx.Select(
+			err = tx.Select(
 				&seatReservationList, query,
 				date.Format("2006/01/02"),
 				req.TrainClass,
@@ -1332,7 +1332,7 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 				query = "SELECT * FROM reservations WHERE reservation_id IN (?) FOR UPDATE"
 				query, param, _ := sqlx.In(query, reservationIDList)
 
-				err := dbx.Select(&reservationList, query, param...)
+				err := tx.Select(&reservationList, query, param...)
 				if err != nil {
 					panic(err)
 				}
