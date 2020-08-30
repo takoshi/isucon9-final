@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -2113,6 +2114,56 @@ func userReservationResponseHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(reservationResponse)
 }
 
+var (
+	cancelPaymentIdList []string
+	cancelPaymentIdLock sync.Mutex
+)
+
+// キャンセルする支払いIDを追加する
+func pushCancelPaymentId(paymentId string) {
+	cancelPaymentIdLock.Lock()
+	cancelPaymentIdList = append(cancelPaymentIdList, paymentId)
+	cancelPaymentIdLock.Unlock()
+}
+
+type CancelPaymentBulk struct {
+	payment_id []string
+}
+
+// バルク処理
+func bulkCancelPayment() {
+	fmt.Println("バルク処理開始")
+	cancelPaymentIdLock.Lock()
+	defer cancelPaymentIdLock.Unlock()
+	defer fmt.Println("バルク処理終了")
+	if len(cancelPaymentIdList) == 0 {
+		return
+	}
+	json, _ := json.Marshal(CancelPaymentBulk{payment_id: cancelPaymentIdList})
+	payment_api := os.Getenv("PAYMENT_API")
+	if payment_api == "" {
+		payment_api = "http://payment:5000"
+	}
+
+	client := &http.Client{Timeout: time.Duration(10) * time.Second}
+	req, _ := http.NewRequest("POST", payment_api+"/payment/_bulk", bytes.NewBuffer(json))
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Println(err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Println("決済のキャンセルに失敗しました")
+		return
+	}
+
+	cancelPaymentIdList = []string{}
+
+	log.Println(resp.Body)
+}
+
 func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 	user, errCode, errMsg := getUser(r)
 	if errCode != http.StatusOK {
@@ -2150,7 +2201,8 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 	case "done":
 		// 支払いをキャンセルする
 		payInfo := CancelPaymentInformationRequest{reservation.PaymentId}
-		j, err := json.Marshal(payInfo)
+		//j, err := json.Marshal(payInfo)
+		_, err := json.Marshal(payInfo)
 		if err != nil {
 			tx.Rollback()
 			errorResponse(w, http.StatusInternalServerError, "JSON Marshalに失敗しました")
@@ -2163,47 +2215,50 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 			payment_api = "http://payment:5000"
 		}
 
-		client := &http.Client{Timeout: time.Duration(10) * time.Second}
-		req, err := http.NewRequest("DELETE", payment_api+"/payment/"+reservation.PaymentId, bytes.NewBuffer(j))
-		if err != nil {
-			tx.Rollback()
-			errorResponse(w, http.StatusInternalServerError, "HTTPリクエストの作成に失敗しました")
-			log.Println(err.Error())
-			return
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			tx.Rollback()
-			errorResponse(w, resp.StatusCode, "HTTP DELETEに失敗しました")
-			log.Println(err.Error())
-			return
-		}
-		defer resp.Body.Close()
+		// キャンセル処理をpushする
+		pushCancelPaymentId(reservation.PaymentId)
 
-		// リクエスト失敗
-		if resp.StatusCode != http.StatusOK {
-			tx.Rollback()
-			errorResponse(w, http.StatusInternalServerError, "決済のキャンセルに失敗しました")
-			log.Println(resp.StatusCode)
-			return
-		}
-
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			tx.Rollback()
-			errorResponse(w, http.StatusInternalServerError, "レスポンスの読み込みに失敗しました")
-			log.Println(err.Error())
-			return
-		}
-
-		// リクエスト取り出し
-		output := CancelPaymentInformationResponse{}
-		err = json.Unmarshal(body, &output)
-		if err != nil {
-			errorResponse(w, http.StatusInternalServerError, "JSON parseに失敗しました")
-			log.Println(err.Error())
-			return
-		}
+		//client := &http.Client{Timeout: time.Duration(10) * time.Second}
+		//req, err := http.NewRequest("DELETE", payment_api+"/payment/"+reservation.PaymentId, bytes.NewBuffer(j))
+		//if err != nil {
+		//	tx.Rollback()
+		//	errorResponse(w, http.StatusInternalServerError, "HTTPリクエストの作成に失敗しました")
+		//	log.Println(err.Error())
+		//	return
+		//}
+		//resp, err := client.Do(req)
+		//if err != nil {
+		//	tx.Rollback()
+		//	errorResponse(w, resp.StatusCode, "HTTP DELETEに失敗しました")
+		//	log.Println(err.Error())
+		//	return
+		//}
+		//defer resp.Body.Close()
+		//
+		//// リクエスト失敗
+		//if resp.StatusCode != http.StatusOK {
+		//	tx.Rollback()
+		//	errorResponse(w, http.StatusInternalServerError, "決済のキャンセルに失敗しました")
+		//	log.Println(resp.StatusCode)
+		//	return
+		//}
+		//
+		//body, err := ioutil.ReadAll(resp.Body)
+		//if err != nil {
+		//	tx.Rollback()
+		//	errorResponse(w, http.StatusInternalServerError, "レスポンスの読み込みに失敗しました")
+		//	log.Println(err.Error())
+		//	return
+		//}
+		//
+		//// リクエスト取り出し
+		//output := CancelPaymentInformationResponse{}
+		//err = json.Unmarshal(body, &output)
+		//if err != nil {
+		//	errorResponse(w, http.StatusInternalServerError, "JSON parseに失敗しました")
+		//	log.Println(err.Error())
+		//	return
+		//}
 		//fmt.Println(output)
 	default:
 		// pass(requesting状態のものはpayment_id無いので叩かない)
@@ -2330,6 +2385,13 @@ func main() {
 		log.Fatalf("failed to connect to DB: %s.", err.Error())
 	}
 	defer dbx.Close()
+
+	go func() {
+		for {
+			time.Sleep(3 * time.Second)
+			bulkCancelPayment()
+		}
+	}()
 
 	// HTTP
 
