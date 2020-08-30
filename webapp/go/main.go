@@ -2127,26 +2127,25 @@ func pushCancelPaymentId(paymentId string) {
 }
 
 type CancelPaymentBulk struct {
-	payment_id []string
+	PaymentID []string `json:"payment_id"`
 }
 
 // バルク処理
 func bulkCancelPayment() {
-	fmt.Println("バルク処理開始")
 	cancelPaymentIdLock.Lock()
 	defer cancelPaymentIdLock.Unlock()
-	defer fmt.Println("バルク処理終了")
 	if len(cancelPaymentIdList) == 0 {
 		return
 	}
-	json, _ := json.Marshal(CancelPaymentBulk{payment_id: cancelPaymentIdList})
+	paymentBulk := CancelPaymentBulk{PaymentID: cancelPaymentIdList}
+	j, err := json.Marshal(paymentBulk)
 	payment_api := os.Getenv("PAYMENT_API")
 	if payment_api == "" {
 		payment_api = "http://payment:5000"
 	}
 
 	client := &http.Client{Timeout: time.Duration(10) * time.Second}
-	req, _ := http.NewRequest("POST", payment_api+"/payment/_bulk", bytes.NewBuffer(json))
+	req, _ := http.NewRequest("POST", payment_api+"/payment/_bulk", bytes.NewBuffer(j))
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Println(err.Error())
@@ -2159,6 +2158,9 @@ func bulkCancelPayment() {
 		return
 	}
 
+	body, err := ioutil.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	fmt.Println(fmt.Sprintf("キャンセル数:%d", len(cancelPaymentIdList)))
 	cancelPaymentIdList = []string{}
 
 	log.Println(resp.Body)
