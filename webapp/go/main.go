@@ -1292,48 +1292,6 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 				data[i], data[j] = data[j], data[i]
 			}
 		}(carNumList)
-
-		seatReservationList := []SeatReservation{}
-		query = "SELECT s.* FROM seat_reservations s, reservations r WHERE r.date=? AND r.train_class=? AND r.train_name=? FOR UPDATE"
-		err = dbx.Select(
-			&seatReservationList, query,
-			date.Format("2006/01/02"),
-			req.TrainClass,
-			req.TrainName,
-		)
-		if err != nil {
-			tx.Rollback()
-			errorResponse(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		seatReservationMap := make(map[string][]SeatReservation)
-		for _, seatReservation := range seatReservationList {
-			key := fmt.Sprintf("%d_%d_%s", seatReservation.CarNumber, seatReservation.SeatRow, seatReservation.SeatColumn)
-			seatReservationMap[key] = append(seatReservationMap[key], seatReservation)
-		}
-
-		var reservationList []Reservation
-		var seatReservationIDList []int
-		seatIDMap := make(map[int]bool)
-		for _, seatReservation := range seatReservationList {
-			if seatIDMap[seatReservation.ReservationId] {
-				continue
-			}
-			seatIDMap[seatReservation.ReservationId] = true
-			seatReservationIDList = append(seatReservationIDList, seatReservation.ReservationId)
-		}
-		query = "SELECT * FROM reservations WHERE reservation_id IN (?) FOR UPDATE"
-		query, param, _ := sqlx.In(query, seatReservationIDList)
-		err = dbx.Select(&reservationList, query, param...)
-		if err != nil {
-			panic(err)
-		}
-		reservationMapById := make(map[int]Reservation)
-		for _, reservation := range reservationList {
-			reservationMapById[reservation.ReservationId] = reservation
-		}
-
 		for _, carnum := range carNumList {
 			seatList, exist := seatListMap[carnum]
 			if !exist {
@@ -1342,18 +1300,46 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 
 			var seatInformationList []SeatInformation
 
+			seatReservationList := []SeatReservation{}
+			query = "SELECT s.* FROM seat_reservations s, reservations r WHERE r.date=? AND r.train_class=? AND r.train_name=? FOR UPDATE"
+			err = dbx.Select(
+				&seatReservationList, query,
+				date.Format("2006/01/02"),
+				req.TrainClass,
+				req.TrainName,
+			)
+			if err != nil {
+				tx.Rollback()
+				errorResponse(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			seatReservationMap := make(map[string][]SeatReservation)
+			for _, seatReservation := range seatReservationList {
+				key := fmt.Sprintf("%d_%d_%s", seatReservation.CarNumber, seatReservation.SeatRow, seatReservation.SeatColumn)
+				seatReservationMap[key] = append(seatReservationMap[key], seatReservation)
+			}
+
 			for _, seat := range seatList {
 				s := SeatInformation{seat.SeatRow, seat.SeatColumn, seat.SeatClass, seat.IsSmokingSeat, false}
 				key := fmt.Sprintf("%d_%d_%s", seat.CarNumber, seat.SeatRow, seat.SeatColumn)
 				seatReservationList = seatReservationMap[key]
 
-				var reservationList []Reservation
+				var reservationIDList []int
 				for _, seatReservation := range seatReservationList {
-					reservationList = append(reservationList, reservationMapById[seatReservation.ReservationId])
+					reservationIDList = append(reservationIDList, seatReservation.ReservationId)
 				}
-				if len(reservationList) == 0 {
+				if len(reservationIDList) == 0 {
 					seatInformationList = append(seatInformationList, s)
 					continue
+				}
+				query = "SELECT * FROM reservations WHERE reservation_id IN (?) FOR UPDATE"
+				query, param, _ := sqlx.In(query, reservationIDList)
+
+				var reservationList []Reservation
+				err := dbx.Select(&reservationList, query, param...)
+				if err != nil {
+					panic(err)
 				}
 
 				for _, reservation := range reservationList {
